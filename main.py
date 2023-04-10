@@ -134,8 +134,8 @@ def player_placement_format():
   new_dict = {key: player_placements[value] for key, value in user_discrim_dict.items() if value in player_placements}
   column_headers = []
   #Grab the tournament names as column headers
-  for tourney in tournies:
-    tourney = tourney.split("/", 1)[1]
+  for tourney in tournies.values():
+    tourney = tourney.name
     column_headers.append(tourney)
 
   #Declair the dataframe and convert into csv file
