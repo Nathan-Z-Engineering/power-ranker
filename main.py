@@ -4,9 +4,10 @@ from urllib.error import URLError
 
 from graphqlclient import GraphQLClient
 import gspread
-
 import queries
 from datamodels import *
+from itertools import groupby
+import pandas as pd
 
 
 def collect_user_ids_from_file():
@@ -14,17 +15,19 @@ def collect_user_ids_from_file():
 
   with open('user-ids.txt', 'r') as file:
     delimiter = '---'
+    delimiter2 = "***"
     for line in file:
       if line.startswith('#'):
         continue
-      # Get player name
-      name_idx = line.index(delimiter)
-      player_name = line[:name_idx]
-      
-      # Get user id
-      id_idx = name_idx + 3
-      user_id = line[id_idx:].strip()
-      user_dict[user_id] = player_name
+       # Get player name and user id with discriminator
+      name, user_id_discriminator = line.strip().split(delimiter)
+        
+        # Split user_id_discriminator to get user ID and discriminator
+      user_id, discriminator = user_id_discriminator.split(delimiter2)
+        
+        # Add player name and user ID with discriminator to dictionary
+      user_dict[user_id] = name
+      user_discrim_dict[name] = discriminator
 
 
 # Currently deprecated
@@ -77,6 +80,72 @@ def execute_query(query, variables):
   client_idx += 1
   
   return result
+
+def get_placements(tournies):
+  """Aquires all the tournament placements of tracked players and stores the results in a dictionary"""
+  print("Getting placement data...")
+  event_id_dict = {}
+  # perPage <= 199 if greater query request will be too large
+  # Thus we can only grab about the top 200 placements 
+  variable = { "page": 1, "perPage": 199}
+
+  discriminator_list = []
+  for player in user_discrim_dict.values():
+    discriminator_list.append(player)
+  
+  player_placements = {key: [] for key in discriminator_list}
+
+  for tourney in tournies.values():
+    name = tourney.name
+    event_id_dict[name] = tourney.events[0].id
+  # print(tourney)
+  for key,event in event_id_dict.items():
+    print("---"+ key)
+    variable["eventId"] = event
+
+    result = execute_query(queries.get_event_standings, variable)
+    res_data = json.loads(result)
+      
+    standings_data = res_data['data']['event']['standings']['nodes']
+  
+    for key in player_placements:
+      player_placements[key].append(None)
+
+  # Group the standings data by discriminator value
+    for standing in standings_data:
+
+      #Error handeling for issues grabbing user data
+      try:
+        discriminator = standing['entrant']['participants'][0]['user']['discriminator']
+        if discriminator in discriminator_list:
+          player_placements[discriminator][-1] = standing['placement']
+      except:
+        pass
+        # print("skip")
+          
+  # print(player_placements)
+  print("Complete")
+  return player_placements
+
+def player_placement_format():
+  """Format's player placement data aquired by get_placements(), currently outputs to a Placements.csv file"""
+  print("Formatting placement data...")
+  #Creating a new dictionary to properly format into a dataframe
+  new_dict = {key: player_placements[value] for key, value in user_discrim_dict.items() if value in player_placements}
+  column_headers = []
+  #Grab the tournament names as column headers
+  for tourney in tournies:
+    tourney = tourney.split("/", 1)[1]
+    column_headers.append(tourney)
+
+  #Declair the dataframe and convert into csv file
+  df = pd.DataFrame.from_dict(new_dict, orient='index', columns=column_headers)
+  df.to_csv("Placements.csv", index=True)
+  print("Complete")
+
+
+    
+
 
 
 def write_tourney_names_to_files(tournies):
@@ -220,7 +289,7 @@ def collect_tournies_for_users_last_season():
     for tourney_json in res_data['data']['user']['tournaments']['nodes']:
       season_window_found = False
       cut_off_date_start = datetime(2023, 1, 1)
-      cut_off_date_end = datetime(2023, 3, 31)
+      cut_off_date_end = datetime(2023, 4, 3)
       
       tourney = Tournament(tourney_json)
       
@@ -410,16 +479,20 @@ removed_events = set()      #event_slug
 removed_tournies = set()    #tourney_slug
 ##### End Collections #####
 
+user_discrim_dict = dict()  #Collects the discriminator of players
+
+
 collect_user_ids_from_file()
-# Sort results chronologically from earliest in the season to latest
+# # Sort results chronologically from earliest in the season to latest
 tournies = dict(sorted(collect_tournies_for_users_last_season().items(), key=lambda kvp: kvp[1].start_time))
 
 set_events(tournies)
 write_tourney_names_to_files(tournies)
 write_user_stats_to_file(user_stats)
-write_tourney_info_to_google_sheet(tournies)
-#write_removed_events_to_files(removed_events)
-
+# write_tourney_info_to_google_sheet(tournies)
+# write_removed_events_to_files(removed_events)
+player_placements = get_placements(tournies)
+player_placement_format()
 
 # TODO: Add all_events_removed_from_tourney idea
 print('Process is complete.')
