@@ -84,3 +84,25 @@ query GetEventsByUser($userId: ID!) {
   }
 }
 '''
+
+get_event_standings = '''
+query EventStandings($eventId: ID!, $page: Int!, $perPage: Int!) {
+  event(id: $eventId) {
+    standings(query: {
+      perPage: $perPage,
+      page: $page
+    }){
+      nodes {
+        placement
+        entrant {
+          participants {
+            user {
+              discriminator
+              }
+          }
+        }
+      }
+    }
+  }
+}
+'''

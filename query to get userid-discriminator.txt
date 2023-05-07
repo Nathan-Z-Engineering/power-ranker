@@ -1,0 +1,25 @@
+query GetUserByTournament($slug: String!) {
+  tournament(slug: $slug) {
+  	participants(query: {
+      page:1,
+      perPage: 100,
+      sortBy: "ASC",
+      filter: {}
+    }) {
+      nodes {
+        gamerTag,
+        user {
+          id
+          discriminator
+        }
+      }
+    }
+  }
+}
+
+
+
+
+{
+  "slug": "tournament/lunar-lounge-38"
+}
